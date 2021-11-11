@@ -1,9 +1,16 @@
 
-from pyepics import caput, caget
-from .folders import *
-from .strings import ClearCalcOut
+from epics import caput, caget
+from IEX_29id.utils.folders import *
+from IEX_29id.utils.strings import ClearCalcOut
 import datetime
 
+def light(ON_OFF):
+    if ON_OFF in ['On','on','ON']:
+        light=0
+    elif ON_OFF in ['Off','off','OFF']:
+        light=1
+    caput('29idd:Unidig1Bo0',light)
+    print(("Turning light "+ON_OFF+"."))
 
 def Check_run():
     todays_date = datetime.today()
@@ -23,6 +30,34 @@ def Check_run():
     print('Current run:', run)
     return(run)
 
+
+
+
+def CheckBranch():
+    BL_mode=BL_Mode_Read()[0]
+    BranchPV=caget("29id:CurrentBranch.VAL")
+    if BL_mode==2:
+        branch="c"
+    elif BL_mode==3:
+        branch="e"
+    else:
+        if (BranchPV == 0):
+            branch = "c"        # PV = 0 => ARPES
+        else:
+            branch = "d"        # PV = 1 => RSXS
+    return branch
+
+def CheckBranch_Name():
+    BL_mode=BL_Mode_Read()[0]
+    BranchPV=caget("29id:CurrentBranch.VAL")
+    if BL_mode==2:
+        branchname= "He Lamp"
+    else:
+        if (BranchPV == 0):
+            branchname = "ARPES"
+        else:
+            branchname = "RSXS"
+    return branchname
 
 
 ## BeamLine mode functions
@@ -78,94 +113,33 @@ def BL_ioc():
 
 
 
-def WaitForIt(D,H,M):
-    """
-    D = how many days from now
-    H,M = what time that day in 24h clock
-
-    e.g.: if today is           Wed Nov 21 at 14:00
-        WaitForIt(2,9,0) => Fri Nov 23 at  9:00
-    """
-    t = datetime.datetime.today()
-    day = datetime.timedelta(days=D)
-    future = t + day
-    returnTime = datetime.datetime(future.year, future.month, future.day, H, M)
-    timeToWait = returnTime - t
-    s=round(timeToWait.total_seconds(),1)
-    m=round(timeToWait.total_seconds()/60.0,1)
-    h=round(timeToWait.total_seconds()/3600.0,1)
-    print("Now is:      "+str(t))
-    print("Target date: "+str(returnTime))
-    print("Sleeping for "+str(s)+" s = "+str(m)+" m = "+str(h)+" h")
-    print("Waaaaaaaait for it...")
-    time.sleep(timeToWait.total_seconds())
-    print(dateandtime())
 
 
-def playsound(sound='FF'):
-    """
-    plays a sound when run
-    'FF' Final Fantasy victory sound
-    'ding' a subtle ding noise
-    'hallelujah' hallelujah chorus
-    """
-    if sound == 'FF':
-        sounds = '/home/beams/29IDUSER/Documents/User_Macros/Macros_29id/Sound_Files/VictoryFF.wav'
-    elif sound == 'ding':
-        sounds = '/home/beams/29IDUSER/Documents/User_Macros/Macros_29id/Sound_Files/ding.wav'
-    elif sound == 'hallelujah':
-        sounds = '/home/beams/29IDUSER/Documents/User_Macros/Macros_29id/Sound_Files/hallelujah.wav'
-    system('aplay ' + sounds)
-
-def RangeUp(start,end,step):
-    while start <= end:
-        yield start
-        start += abs(step)
-
-def RangeDown(start,end,step):
-    while start >= end:
-        yield start
-        start -= abs(step)
-
-def EgForLoop():
-    for hv in RangeDown(2000,500,-500):
-        print(hv)
-    for hv in RangeUp(500,2000,500):
-        print(hv)
-
-def TakeClosest(myList,myNumber):
-    """Given a list of integers, I want to find which number is the closest to a number x."""
-    return min(myList, key=lambda x:abs(x-myNumber))
-
-
-
-def Check_Staff_Directory(**kwargs):
-    """
-    Switchs to the staff directory
-        Uses Fold
-    """
-    kwargs.setdefault("scanIOC",BL_ioc())
-    kwargs.setdefault("run",Check_run())
-    
-    scanIOC=kwargs["scanIOC"]
-    run= kwargs["run"]
-    
-    directory = MDA_CurrentDirectory(scanIOC)
-    current_run = MDA_CurrentRun(scanIOC)
-    
-    if directory.find('data_29idb') < 1 or current_run != run:
-        print('You are not currently saving in the Staff directory and/or the desired run - REPLY "yes" to switch folder.\nThis will only work if the run directory already exists.\nOtherwise, you must open ipython as 29id to create a new run directory using:\n\tFolder_'+scanIOC+'(run,\'Staff\')')
-        foo=input('\nAre you ready to switch to the '+run+' Staff directory? >')
-        if foo == 'Y' or foo == 'y' or foo == 'yes'or foo == 'YES':
-            print('Switching directory...')
-            if scanIOC=='ARPES':
-                Folder_ARPES('Staff',mdaOnly=True,**kwargs)
-            elif scanIOC=='Kappa':
-                Folder_Kappa('Staff',create_only=False)
-        else:
-            print('\nFolder not set.')
-    else:
-        print('Staff directory OK.')
-    directory = MDA_CurrentDirectory(scanIOC)
-    print('\nCurrent directory: '+directory)
+# def Close_CBranch(**kwargs):
+#     """
+#     EA.off()
+#     Close_CShutter()
+#     Close_CValve()
+#     **kwargs
+#         EA="off"; turns off EA (None = doesn't check)
+#     """
+#     kwargs.setdefault("EA","off")
+#     if kwargs["EA"] == "off":
+#         EA.off()
+#     shutter=caget('PA:29ID:SCS_BLOCKING_BEAM.VAL',as_string=True)
+#     if shutter == 'OFF':  #OFF = beam not blocked = shutter open
+#         Close_CShutter()
+#     i=0
+#     while True:
+#         valve=caget('29id:BLEPS:GV10:OPENED:STS',as_string=True)
+#         if (valve=='GOOD'):
+#             sleep(10)
+#             Close_CValve()
+#             i+=1
+#             if i == 3:
+#                 print("Can't close valve; check status")
+#                 break
+#         elif (valve == 'BAD'):
+#             print('ARPES chamber valve now closed')
+#             break
 

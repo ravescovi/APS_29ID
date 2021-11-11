@@ -1,6 +1,9 @@
+from epics import caput
 from IEX_29id.utils.exp import Check_run, BL_Mode_Set, BL_ioc
-import os  
-from epics import caput, caget
+from IEX_29id.mda.file import MDA_CurrentDirectory
+from IEX_29id.mda.file import MDA_CurrentRun
+import os 
+import re 
    
 def Make_DataFolder(run,folder,UserName,scanIOC,ftp): #JM was here ->print full crontab command and change permissions on kip -still needs work!
     """
@@ -101,6 +104,10 @@ def _userDataFolder(userName,scanIOC,**kwargs):
     dataFolder='/net/s29data/export/data_29id'+folder+'/'+run+'/'+userName
     return dataFolder
 
+def _filename_key(filename):
+    return (len(filename), filename)
+
+
 def Folder_mda(run,folder,UserName,scanIOC):
     """
     For Staff: folder='b', UserName='Staff'
@@ -130,20 +137,72 @@ def Folder_mda(run,folder,UserName,scanIOC):
     caput("29id"+scanIOC+":saveData_baseName",FilePrefix+"_")
     caput("29id"+scanIOC+":saveData_scanNumber",FileNumber)
 
-def logname_set(FileName=None,scanIOC=None):
+def getNextFileNumber(data_dir, file_prefix,**kwargs):
     """
-    Sets the string used for the FileName in scanlog and EAlog
-    uses logname_PV to reference PV associated with a particular ioc
-    if FileName=None it sets the filename to YYYYMMDD_log.txt
+    gets the next file number for the pattern 
+    data_dir/file_prefix_filenum
+    
+    kwargs:
+        debug = False (default); if True then print lo
+        q = True (default); if False then prints next file number
     """
-    if scanIOC is None:
-        scanIOC=BL_ioc()
-    if FileName is None:
-        FileName=today()+'_log.txt'
+    kwargs.setdefault("debug",False)
+    kwargs.setdefault("q",True)
+    
+    onlyfiles = [f for f in os.listdir(data_dir) if os.isfile(os.join(data_dir, f)) and f[:len(file_prefix)] == file_prefix]
+    sortedfiles = sorted(onlyfiles, key=_filename_key)
+    pattern = re.compile('(.*)_(.*)\.(.*)')
     try:
-        PV=logname_PV(scanIOC)
-        caput(PV,FileName)
-        print("\nLog FileName = \'"+FileName+"\' @ "+PV)
-        print('To change FileName, use logname_set("newname")')
-    except:
-        print("Error: was not able to set the FileName, check that 29idb IOC is running")
+        lastFile = sortedfiles[-1]
+    except IndexError as errObj:
+        nextFileNumber = 1
+        if kwargs["debug"]:
+            print("Data directory = ", data_dir)
+            print("File prefix =", file_prefix)
+            print("File number =", None)
+            print("File extension =", "TBD")
+            print("Next File number =", nextFileNumber)
+    else:
+        matchObj = pattern.match(lastFile)
+        nextFileNumber = int(matchObj.group(2)) + 1
+        if kwargs["debug"]:
+            print("Data directory = ", data_dir)
+            print("File prefix =", matchObj.group(1))
+            print("File number =", matchObj.group(2))
+            print("File extension =", matchObj.group(3))
+            print("Next File number =", nextFileNumber)
+    if kwargs["q"] == False:
+        print("Next File Number: ",nextFileNumber)
+    return nextFileNumber
+
+
+def Check_Staff_Directory(**kwargs):
+    """
+    Switchs to the staff directory
+        Uses Fold
+    """
+    kwargs.setdefault("scanIOC",BL_ioc())
+    kwargs.setdefault("run",Check_run())
+    
+    scanIOC=kwargs["scanIOC"]
+    run= kwargs["run"]
+    
+    directory = MDA_CurrentDirectory(scanIOC)
+    current_run = MDA_CurrentRun(scanIOC)
+    
+    if directory.find('data_29idb') < 1 or current_run != run:
+        print('You are not currently saving in the Staff directory and/or the desired run - REPLY "yes" to switch folder.\nThis will only work if the run directory already exists.\nOtherwise, you must open ipython as 29id to create a new run directory using:\n\tFolder_'+scanIOC+'(run,\'Staff\')')
+        foo=input('\nAre you ready to switch to the '+run+' Staff directory? >')
+        if foo == 'Y' or foo == 'y' or foo == 'yes'or foo == 'YES':
+            print('Switching directory...')
+            if scanIOC=='ARPES':
+                Folder_ARPES('Staff',mdaOnly=True,**kwargs)
+            elif scanIOC=='Kappa':
+                Folder_Kappa('Staff',create_only=False)
+        else:
+            print('\nFolder not set.')
+    else:
+        print('Staff directory OK.')
+    directory = MDA_CurrentDirectory(scanIOC)
+    print('\nCurrent directory: '+directory)
+
